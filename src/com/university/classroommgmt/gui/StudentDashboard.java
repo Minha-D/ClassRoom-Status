@@ -27,59 +27,134 @@ public class StudentDashboard extends JFrame {
 
     private final JTable emptyTable = new JTable(emptyModel);
     private final JTable requestsTable = new JTable(myRequestsModel);
+    private final JPanel routineContainer = new JPanel();
 
     public StudentDashboard(User student) {
-        super("Student Dashboard - " + student.getFullName());
+        super(titleFor(student));
         this.student = student;
         setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
-        setSize(760, 560);
+        setSize(800, 600);
         setLocationRelativeTo(null);
 
         JPanel root = new JPanel(new BorderLayout(10, 10));
         root.setBorder(BorderFactory.createEmptyBorder(12, 12, 12, 12));
 
-        DayOfWeek today = LocalDate.now().getDayOfWeek();
-        String todayName = today.getDisplayName(TextStyle.FULL, Locale.ENGLISH);
+        JTabbedPane tabs = new JTabbedPane();
+        tabs.addTab("Empty Classrooms Today", buildEmptyClassroomsTab());
+        tabs.addTab("My Class Routine", buildRoutineTab());
+        tabs.addTab("My Booking Requests", buildRequestsTab());
+        root.add(tabs, BorderLayout.CENTER);
 
-        JLabel header = new JLabel("Empty classrooms today (" + todayName + ")");
-        header.setFont(header.getFont().deriveFont(Font.BOLD, 15f));
-        root.add(header, BorderLayout.NORTH);
-
-        JScrollPane emptyScroll = new JScrollPane(emptyTable);
-        emptyScroll.setPreferredSize(new Dimension(700, 200));
-
-        JButton requestBtn = new JButton("Request to Book Selected Class");
-        requestBtn.addActionListener(e -> requestBooking());
-        JButton refreshBtn = new JButton("Refresh");
-        refreshBtn.addActionListener(e -> refresh());
-
-        JPanel emptyPanel = new JPanel(new BorderLayout(6, 6));
-        emptyPanel.add(emptyScroll, BorderLayout.CENTER);
-        JPanel emptyBtns = new JPanel(new FlowLayout(FlowLayout.LEFT));
-        emptyBtns.add(requestBtn);
-        emptyBtns.add(refreshBtn);
-        emptyPanel.add(emptyBtns, BorderLayout.SOUTH);
-
-        JLabel myReqLabel = new JLabel("My Booking Requests");
-        myReqLabel.setFont(myReqLabel.getFont().deriveFont(Font.BOLD, 13f));
-        JScrollPane reqScroll = new JScrollPane(requestsTable);
-        reqScroll.setPreferredSize(new Dimension(700, 180));
-        JPanel reqPanel = new JPanel(new BorderLayout(6, 6));
-        reqPanel.add(myReqLabel, BorderLayout.NORTH);
-        reqPanel.add(reqScroll, BorderLayout.CENTER);
-
-        JSplitPane split = new JSplitPane(JSplitPane.VERTICAL_SPLIT, emptyPanel, reqPanel);
-        split.setResizeWeight(0.55);
-        root.add(split, BorderLayout.CENTER);
-
+        JButton accountBtn = new JButton("My Account");
+        accountBtn.addActionListener(e -> AccountDialog.open(this, student, store, () -> {
+            setTitle(titleFor(student));
+            refresh();
+        }));
         JButton logoutBtn = new JButton("Log Out");
         logoutBtn.addActionListener(e -> { dispose(); new LoginFrame().setVisible(true); });
         JPanel south = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+        south.add(accountBtn);
         south.add(logoutBtn);
         root.add(south, BorderLayout.SOUTH);
 
         setContentPane(root);
         refresh();
+    }
+
+    private static String titleFor(User student) {
+        String batch = student.getBatch();
+        String suffix = batch != null && !batch.isBlank() ? " (Semester/Section " + batch + ")" : "";
+        return "Student Dashboard - " + student.getFullName() + suffix;
+    }
+
+    // ---------- Empty classrooms today ----------
+    private JPanel buildEmptyClassroomsTab() {
+        DayOfWeek today = LocalDate.now().getDayOfWeek();
+        String todayName = today.getDisplayName(TextStyle.FULL, Locale.ENGLISH);
+
+        JPanel p = new JPanel(new BorderLayout(8, 8));
+        p.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+
+        JLabel header = new JLabel("Empty classrooms today (" + todayName + ")");
+        header.setFont(header.getFont().deriveFont(Font.BOLD, 14f));
+        p.add(header, BorderLayout.NORTH);
+        p.add(new JScrollPane(emptyTable), BorderLayout.CENTER);
+
+        JButton requestBtn = new JButton("Request to Book Selected Class");
+        requestBtn.addActionListener(e -> requestBooking());
+        JButton refreshBtn = new JButton("Refresh");
+        refreshBtn.addActionListener(e -> refresh());
+        JPanel btns = new JPanel(new FlowLayout(FlowLayout.LEFT));
+        btns.add(requestBtn);
+        btns.add(refreshBtn);
+        p.add(btns, BorderLayout.SOUTH);
+        return p;
+    }
+
+    // ---------- My Class Routine (day-separated) ----------
+    private JPanel buildRoutineTab() {
+        JPanel p = new JPanel(new BorderLayout(8, 8));
+        p.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+
+        String batch = student.getBatch();
+        String note = (batch == null || batch.isBlank())
+                ? "No semester/section is set on your account yet — ask an admin to add it so your routine can show up here."
+                : "Showing your routine for semester/section " + batch + ".";
+        JLabel header = new JLabel(note);
+        p.add(header, BorderLayout.NORTH);
+
+        routineContainer.setLayout(new BoxLayout(routineContainer, BoxLayout.Y_AXIS));
+        JScrollPane scroll = new JScrollPane(routineContainer);
+        scroll.getVerticalScrollBar().setUnitIncrement(16);
+        p.add(scroll, BorderLayout.CENTER);
+
+        JButton refreshBtn = new JButton("Refresh");
+        refreshBtn.addActionListener(e -> refresh());
+        JPanel btns = new JPanel(new FlowLayout(FlowLayout.LEFT));
+        btns.add(refreshBtn);
+        p.add(btns, BorderLayout.SOUTH);
+        return p;
+    }
+
+    private void rebuildRoutinePanel() {
+        String batch = student.getBatch();
+        DaySections.rebuild(routineContainer,
+                day -> sessionsForBatchAndDay(batch, day),
+                new String[]{"Course", "Room", "Time", "Teacher", "Status"},
+                s -> {
+                    Classroom room = store.getClassroom(s.getClassroomId());
+                    User teacher = store.getUser(s.getTeacherUsername());
+                    return new Object[]{
+                            s.getCourseName(),
+                            room != null ? room.toString() : s.getClassroomId(),
+                            s.getStartTime() + " - " + s.getEndTime(),
+                            teacher != null ? teacher.getFullName() : s.getTeacherUsername(),
+                            s.getStatus()
+                    };
+                });
+    }
+
+    private List<ClassSession> sessionsForBatchAndDay(String batch, DayOfWeek day) {
+        List<ClassSession> out = new java.util.ArrayList<>();
+        if (batch == null || batch.isBlank()) return out;
+        for (ClassSession s : store.getSessionsForDay(day)) {
+            if (batch.equalsIgnoreCase(s.getBatch())) out.add(s);
+        }
+        return out;
+    }
+
+    // ---------- My Booking Requests ----------
+    private JPanel buildRequestsTab() {
+        JPanel p = new JPanel(new BorderLayout(8, 8));
+        p.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+        p.add(new JScrollPane(requestsTable), BorderLayout.CENTER);
+
+        JButton refreshBtn = new JButton("Refresh");
+        refreshBtn.addActionListener(e -> refresh());
+        JPanel btns = new JPanel(new FlowLayout(FlowLayout.LEFT));
+        btns.add(refreshBtn);
+        p.add(btns, BorderLayout.SOUTH);
+        return p;
     }
 
     private void refresh() {
@@ -98,6 +173,8 @@ public class StudentDashboard extends JFrame {
                     s.getCancelReason() == null ? "" : s.getCancelReason()
             });
         }
+
+        rebuildRoutinePanel();
 
         myRequestsModel.setRowCount(0);
         for (BookingRequest r : store.getRequestsForStudent(student.getUsername())) {

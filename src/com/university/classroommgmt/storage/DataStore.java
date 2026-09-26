@@ -78,16 +78,86 @@ public class DataStore {
         return c;
     }
 
+    /** Finds an existing classroom by its room number (case-insensitive), regardless of building. */
+    public Classroom getClassroomByRoomNumber(String roomNumber) {
+        for (Classroom c : classrooms.values()) {
+            if (c.getRoomNumber().equalsIgnoreCase(roomNumber)) return c;
+        }
+        return null;
+    }
+
+    /** Returns the existing classroom for this room number, or creates one with the given defaults. */
+    public Classroom getOrCreateClassroom(String roomNumber, String building, int capacity) {
+        Classroom existing = getClassroomByRoomNumber(roomNumber);
+        return existing != null ? existing : addClassroom(roomNumber, building, capacity);
+    }
+
+    /** Returns the existing user for this username, or creates a new TEACHER account with the given defaults. */
+    public User getOrCreateTeacher(String username, String fullName, String defaultPassword) {
+        User existing = users.get(username);
+        if (existing != null) return existing;
+        User u = new User(username, defaultPassword, fullName, User.Role.TEACHER);
+        addUser(u);
+        return u;
+    }
+
+    /**
+     * Updates a user's full name, username, and/or password in one atomic step. If the username
+     * changes, the new name cascades to every ClassSession/BookingRequest that referenced the old
+     * one, so nothing is left pointing at a username that no longer exists.
+     * Returns null on success, or a user-facing error message if the change couldn't be made.
+     */
+    public String updateAccount(String currentUsername, String newUsername, String newFullName, String newPasswordOrNull) {
+        User user = users.get(currentUsername);
+        if (user == null) return "User not found.";
+
+        String trimmedUsername = newUsername == null ? "" : newUsername.trim();
+        if (trimmedUsername.isEmpty()) return "Username cannot be empty.";
+        String trimmedFullName = newFullName == null ? "" : newFullName.trim();
+        if (trimmedFullName.isEmpty()) return "Full name cannot be empty.";
+
+        boolean usernameChanged = !trimmedUsername.equals(currentUsername);
+        if (usernameChanged && users.containsKey(trimmedUsername)) {
+            return "That username is already taken.";
+        }
+
+        if (usernameChanged) {
+            users.remove(currentUsername);
+            user.setUsername(trimmedUsername);
+            users.put(trimmedUsername, user);
+
+            for (ClassSession s : sessions.values()) {
+                if (currentUsername.equals(s.getTeacherUsername())) s.setTeacherUsername(trimmedUsername);
+                if (currentUsername.equals(s.getBookedByUsername())) s.setBookedByUsername(trimmedUsername);
+            }
+            for (BookingRequest r : requests.values()) {
+                if (currentUsername.equals(r.getStudentUsername())) r.setStudentUsername(trimmedUsername);
+            }
+        }
+
+        user.setFullName(trimmedFullName);
+        if (newPasswordOrNull != null && !newPasswordOrNull.isEmpty()) {
+            user.setPassword(newPasswordOrNull);
+        }
+
+        saveUsers();
+        if (usernameChanged) {
+            saveSessions();
+            saveRequests();
+        }
+        return null;
+    }
+
     // ---------- Sessions ----------
     public Collection<ClassSession> getAllSessions() { return sessions.values(); }
     public ClassSession getSession(String id) { return sessions.get(id); }
 
     public ClassSession addSession(String classroomId, String courseName, String teacherUsername,
-                                    DayOfWeek day, LocalTime start, LocalTime end) {
+                                    DayOfWeek day, LocalTime start, LocalTime end, String batch) {
         String id = "S" + (sessionCounter++);
         while (sessions.containsKey(id)) id = "S" + (sessionCounter++);
         ClassSession s = new ClassSession(id, classroomId, courseName, teacherUsername, day, start, end,
-                ClassSession.Status.SCHEDULED, null, null);
+                ClassSession.Status.SCHEDULED, null, null, batch);
         sessions.put(id, s);
         saveSessions();
         return s;
@@ -291,8 +361,8 @@ public class DataStore {
         users.put("admin", new User("admin", "admin123", "System Admin", User.Role.ADMIN));
         users.put("tsmith", new User("tsmith", "pass123", "Dr. T. Smith", User.Role.TEACHER));
         users.put("jdoe", new User("jdoe", "pass123", "Prof. J. Doe", User.Role.TEACHER));
-        users.put("alice", new User("alice", "pass123", "Alice Johnson", User.Role.STUDENT));
-        users.put("bob", new User("bob", "pass123", "Bob Williams", User.Role.STUDENT));
+        users.put("alice", new User("alice", "pass123", "Alice Johnson", User.Role.STUDENT, "1A"));
+        users.put("bob", new User("bob", "pass123", "Bob Williams", User.Role.STUDENT, "1B"));
         saveUsers();
 
         Classroom c1 = addClassroom("101", "Main Hall", 40);
@@ -300,9 +370,9 @@ public class DataStore {
         Classroom c3 = addClassroom("305", "Engineering Wing", 60);
 
         DayOfWeek today = java.time.LocalDate.now().getDayOfWeek();
-        addSession(c1.getId(), "Intro to CS", "tsmith", today, LocalTime.of(9, 0), LocalTime.of(10, 30));
-        addSession(c2.getId(), "Calculus II", "jdoe", today, LocalTime.of(11, 0), LocalTime.of(12, 30));
-        ClassSession s3 = addSession(c3.getId(), "Data Structures", "tsmith", today, LocalTime.of(14, 0), LocalTime.of(15, 30));
+        addSession(c1.getId(), "Intro to CS", "tsmith", today, LocalTime.of(9, 0), LocalTime.of(10, 30), "1A");
+        addSession(c2.getId(), "Calculus II", "jdoe", today, LocalTime.of(11, 0), LocalTime.of(12, 30), "1B");
+        ClassSession s3 = addSession(c3.getId(), "Data Structures", "tsmith", today, LocalTime.of(14, 0), LocalTime.of(15, 30), "1A");
         cancelSession(s3.getId(), "Teacher out sick");
     }
 }

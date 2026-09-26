@@ -30,6 +30,7 @@ public class BookingRequest {
     public String getNote() { return note; }
 
     public void setStatus(Status status) { this.status = status; }
+    public void setStudentUsername(String studentUsername) { this.studentUsername = studentUsername; }
 
     public String toCsv() {
         return String.join(",", id, sessionId, studentUsername, requestedAt.toString(),
