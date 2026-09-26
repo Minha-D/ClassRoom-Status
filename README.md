@@ -17,13 +17,35 @@ java -jar ClassroomManagementSystem.jar
 **Or rebuild from source:**
 ```
 javac -d out $(find src -name "*.java")
-jar cfe ClassroomManagementSystem.jar com.university.classroommgmt.Main -C out .
+jar cfm ClassroomManagementSystem.jar manifest.txt -C out .
 java -jar ClassroomManagementSystem.jar
 ```
+
+Run it from the project root (or keep the `lib/` folder alongside the jar
+wherever you move it) so the bundled UI theme in `lib/` is found — see
+"Look & feel" below.
 
 A `data/` folder is created next to the jar on first run, pre-seeded with
 demo accounts, 3 classrooms, and 3 class sessions for today (one already
 cancelled so you can see the "empty" flow immediately).
+
+## Look & feel
+
+The app uses [FlatLaf](https://www.formdev.com/flatlaf/) (a modern,
+flat Swing theme) instead of the default "Windows 98"-looking Metal
+theme. The jar is bundled at `lib/flatlaf-3.1.jar` (Apache License 2.0,
+© FormDev Software GmbH) — nothing to download, it just works as long as
+the jar is run with `lib/` sitting next to it (the manifest's
+`Class-Path` entry points there).
+
+This is loaded via reflection in `Main.applyLookAndFeel()`, so the app
+still builds and runs fine even if `lib/flatlaf-3.1.jar` goes missing —
+it just falls back to your OS's native Swing look instead of erroring
+out. To switch to FlatLaf's dark theme instead, change
+`"com.formdev.flatlaf.FlatLightLaf"` to `"com.formdev.flatlaf.FlatDarkLaf"`
+in `Main.java`. To use a newer FlatLaf version, drop a different
+`flatlaf-<version>.jar` into `lib/` and update the `Class-Path` line in
+`manifest.txt` to match its filename, then rebuild.
 
 ## Demo accounts
 
@@ -147,6 +169,11 @@ src/com/university/classroommgmt/
     StudentDashboard.java      day-grouped "My Class Routine" tab, filtered by semester/section
     AccountDialog.java         shared "My Account" dialog (full name / username / password)
     DaySections.java           shared helper that renders sessions grouped by day of week
+```
+
+```
+lib/flatlaf-3.1.jar          bundled UI theme (see "Look & feel" above)
+manifest.txt                 jar manifest — Main-Class + Class-Path to lib/flatlaf-3.1.jar
 ```
 
 ## Data files (auto-created in `data/`)
